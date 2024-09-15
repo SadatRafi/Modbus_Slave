@@ -61,7 +61,7 @@ void Modbus_Read_Holding_Registers(uint8_t slaveId, uint16_t startAddress, uint1
     // Prepare the response
     responseMessage[0] = slaveId;           // Slave ID
     responseMessage[1] = 0x03;              // Function code 0x03
-    responseMessage[2] = byteCount;         // Number of bytes to follow (2 × quantity)
+    responseMessage[2] = byteCount;         // Number of bytes to follow (2 Ã— quantity)
 
     // Add the requested register values to the response message
     for (uint16_t i = 0; i < quantity; i++) {
