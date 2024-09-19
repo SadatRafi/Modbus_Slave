@@ -30,9 +30,8 @@ User Instruction:
 	This function processes a Modbus message received from a master device. The user should pass the received 
 message along with its length, and an array to store the response message. The function will validate the 
 message, check the CRC, and handle the requested Modbus function (e.g., reading holding registers). If any 
-Modbus-related errors occur, it will return standard Modbus exception codes (defined by Modicon). Additionally, 
-this function may return developer-defined error codes, such as those related to device ID mismatches or CRC
-Mismatch . The response message will be populated accordingly with data or exception responses.
+Modbus-related errors occur, it will reply standard Modbus exception codes (defined by Modicon). Additionally,
+this function returns developer-defined error codes, such as device ID mismatches or CRC Mismatch .
 **************************************************************************************************************/
 int Modbus_Slave_ProcessMessage(uint8_t *receivedMessage, uint16_t length, uint8_t *responseMessage);
 

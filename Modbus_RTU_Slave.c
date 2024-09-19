@@ -9,41 +9,66 @@ Description: This repository implements the MODBUS RTU protocol for a slave devi
 ****************************************************************************************/
 #include "Modbus_RTU_Slave.h"
 
-static uint8_t deviceApplicationMemory[DEVICE_APPLICATION_MEMORY];
+#define MAXIMUM_APPLICATION_DATA_SIZE 252
+
+#define FC_READ_COILS                      0x01  // Read Coils
+#define FC_READ_DISCRETE_INPUTS            0x02  // Read Discrete Inputs
+#define FC_READ_HOLDING_REGISTERS          0x03  // Read Holding Registers
+#define FC_READ_INPUT_REGISTERS            0x04  // Read Input Registers
+#define FC_WRITE_SINGLE_COIL               0x05  // Write Single Coil
+#define FC_WRITE_SINGLE_REGISTER           0x06  // Write Single Holding Register
+#define FC_READ_EXCEPTION_STATUS           0x07  // Read Exception Status
+#define FC_DIAGNOSTICS                     0x08  // Diagnostics
+#define FC_GET_COM_EVENT_COUNTER           0x0B  // Get Comm Event Counter
+#define FC_GET_COM_EVENT_LOG               0x0C  // Get Comm Event Log
+#define FC_WRITE_MULTIPLE_COILS            0x0F  // Write Multiple Coils
+#define FC_WRITE_MULTIPLE_REGISTERS        0x10  // Write Multiple Holding Registers
+#define FC_REPORT_SLAVE_ID                 0x11  // Report Slave ID
+#define FC_READ_DEVICE_IDENTIFICATION      0x2B  // Read Device Identification
 
 // Arrays for Modbus data
 static uint8_t slaveAddress;
-static uint8_t *coilRegister;                     // Coils stored as bits
-static uint8_t *discreteInputRegister;            // Discrete Inputs stored as bits
-static uint16_t *holdingRegisters; 								// Holding registers (16-bit values)
-static uint16_t *inputRegisters;     							// Input registers (16-bit values)
+typedef union {
+    uint8_t byteMemory[DEVICE_APPLICATION_MEMORY];
+    uint16_t wordMemory[DEVICE_APPLICATION_MEMORY / 2];  // Assuming 2 bytes per 16-bit word
+} DeviceApplicationMemory;
 
-static uint8_t maxNumberOfcoils;                     // Coils stored as bits
-static uint8_t maxNumberOfdiscreteInputs;            // Discrete Inputs stored as bits
-static uint16_t maxNumberOfHoldingRegisters; 								// Holding registers (16-bit values)
-static uint16_t maxNumberOfInputRegisters;     							// Input registers (16-bit values)
+static DeviceApplicationMemory deviceMemory;
 
-int Initialize_MODBUS(uint8_t deviceID,ModbusApplicationMemory modbusSlaveMemoryMap)
+static uint8_t *coilRegister;
+static uint8_t *discreteInputRegister;
+static uint16_t *holdingRegister;
+static uint16_t *inputRegisters;
+
+static uint8_t maxNumberOfCoils;                     // Coils stored as bits
+static uint8_t maxNumberOfDiscreteInputs;            // Discrete Inputs stored as bits
+static uint16_t maxNumberOfHoldingRegisters; 				 // Holding registers (16-bit values)
+static uint16_t maxNumberOfInputRegisters;     			 // Input registers (16-bit values)
+
+
+
+int Initialize_MODBUS(uint8_t deviceID, ModbusApplicationMemory modbusSlaveMemoryMap) 
 {
-	maxNumberOfcoils = (modbusSlaveMemoryMap.numberOfCoils+7)/8;
-	maxNumberOfdiscreteInputs = (modbusSlaveMemoryMap.numberOfDiscreteInputs+7)/8;
+	maxNumberOfCoils = (uint8_t)(modbusSlaveMemoryMap.numberOfCoils + 7) / 8;
+	maxNumberOfDiscreteInputs = (uint8_t)(modbusSlaveMemoryMap.numberOfDiscreteInputs + 7) / 8;
 	maxNumberOfHoldingRegisters = modbusSlaveMemoryMap.numberOfHoldingRegisters;
 	maxNumberOfInputRegisters = modbusSlaveMemoryMap.numberOfInputRegisters;
-	
+
 	uint16_t startOfCoilMemory = 0;
-	uint16_t startOfdiscreteInputMemory = startOfCoilMemory + maxNumberOfcoils;
-	uint16_t startOfHoldingRegisterMemory = startOfdiscreteInputMemory + maxNumberOfdiscreteInputs;
+	uint16_t startOfDiscreteInputMemory = startOfCoilMemory + maxNumberOfCoils;
+	uint16_t startOfHoldingRegisterMemory = startOfDiscreteInputMemory + maxNumberOfDiscreteInputs;
 	uint16_t startOfInputRegisterMemory = startOfHoldingRegisterMemory + 2*(maxNumberOfHoldingRegisters);
 	uint16_t totalMemoryRequired = startOfInputRegisterMemory + 2*(maxNumberOfInputRegisters);
 	if(totalMemoryRequired > DEVICE_APPLICATION_MEMORY)
 	{
 		return INSUFFICIENT_DEVICE_APPLICATION_MEMORY;
 	}
-	slaveAddress = deviceID;
-	coilRegister = &deviceApplicationMemory[startOfCoilMemory];
-	discreteInputRegister = &deviceApplicationMemory[startOfdiscreteInputMemory];
-	holdingRegisters = (uint16_t*)&deviceApplicationMemory[startOfHoldingRegisterMemory];
-  inputRegisters = (uint16_t*)&deviceApplicationMemory[startOfInputRegisterMemory];
+  slaveAddress = deviceID;
+	
+	coilRegister = deviceMemory.byteMemory;
+	discreteInputRegister = &deviceMemory.byteMemory[startOfDiscreteInputMemory];
+	holdingRegister = &deviceMemory.wordMemory[startOfHoldingRegisterMemory / 2];
+	inputRegisters = &deviceMemory.wordMemory[startOfInputRegisterMemory / 2];
 	return SUCCESSFUL;
 }
 
@@ -68,7 +93,7 @@ problems back to the master, enabling better diagnostics and error handling in t
 
 
 //Function Declaration for Modbus_Read_Holding_Registers
-void Modbus_Read_Holding_Registers(uint8_t deviceID, uint16_t startAddress, uint16_t quantity, uint8_t *responseMessage);
+void Modbus_Read_Holding_Registers(uint8_t deviceID, uint16_t startAddress, uint8_t quantity, uint8_t *responseMessage);
 uint16_t Modbus_CRC16(uint8_t *modbusDataFrame, uint16_t modbusDataFrameLength);
 void Append_CRC(uint8_t *modbusMessage, uint16_t modbusMessageLength);
 void Send_Modbus_Exception(uint8_t deviceID, uint8_t functionCode, uint8_t exceptionCode, uint8_t *responseMessage);
@@ -103,11 +128,11 @@ int Modbus_Slave_ProcessMessage(uint8_t *receivedMessage, uint16_t length, uint8
 	
 	uint8_t functionCode = receivedMessage[1];  // Extract function code
 	uint16_t startAddress = (uint16_t)(receivedMessage[2] << 8) | receivedMessage[3];  // Extract starting address
-	uint16_t quantity = (uint16_t)(receivedMessage[4] << 8) | receivedMessage[5];  // Extract quantity of registers to read
+	uint8_t quantity = (uint8_t)(receivedMessage[4] << 8) | receivedMessage[5];  // Extract quantity of registers to read
 
 	switch (functionCode) 
 	{
-		case 0x03:  // Read Holding Registers
+		case FC_READ_HOLDING_REGISTERS:  // Read Holding Registers
 			Modbus_Read_Holding_Registers(receivedMessage[0], startAddress, quantity, responseMessage);  // Call function to process
 			break;
 			
@@ -120,10 +145,15 @@ int Modbus_Slave_ProcessMessage(uint8_t *receivedMessage, uint16_t length, uint8
 }
 
 // Function to handle Modbus function code 0x03 (Read Holding Registers)
-void Modbus_Read_Holding_Registers(uint8_t deviceID, uint16_t startAddress, uint16_t quantity, uint8_t *responseMessage)
+void Modbus_Read_Holding_Registers(uint8_t deviceID, uint16_t startAddress, uint8_t quantity, uint8_t *responseMessage)
 {
-	uint16_t byteCount = quantity * 2;  // Each register is 2 bytes
-
+	if((quantity*2) > MAXIMUM_APPLICATION_DATA_SIZE)
+	{
+		// Send illegal data value exception
+		Send_Modbus_Exception(deviceID, FC_READ_HOLDING_REGISTERS, ILLEGAL_DATA_VALUE, responseMessage);
+		return;
+	}
+	uint8_t byteCount = quantity * 2;  // Each register is 2 bytes
 	// Check if the requested registers are within valid range
 	if ((startAddress + quantity) > maxNumberOfHoldingRegisters) 
 	{
@@ -133,14 +163,14 @@ void Modbus_Read_Holding_Registers(uint8_t deviceID, uint16_t startAddress, uint
 	}
 
 	// Prepare the response
-	responseMessage[0] = deviceID;          // Slave ID
-	responseMessage[1] = 0x03;              // Function code 0x03
-	responseMessage[2] = byteCount;         // Number of bytes to follow (2 × quantity)
+	responseMessage[0] = deviceID;          										 // Slave ID
+	responseMessage[1] = FC_READ_HOLDING_REGISTERS;              // Function code 0x03
+	responseMessage[2] = byteCount;         										 // Number of bytes to follow (2 × quantity)
 
 	// Add the requested register values to the response message
 	for (uint16_t i = 0; i < quantity; i++) 
 	{
-		uint16_t registerValue = holdingRegisters[startAddress + i];
+		uint16_t registerValue = holdingRegister[startAddress + i];
 		responseMessage[3 + i * 2] = (registerValue >> 8) & 0xFF;  // High byte of register value
 		responseMessage[4 + i * 2] = registerValue & 0xFF;         // Low byte of register value
 	}
@@ -161,24 +191,24 @@ void Send_Modbus_Exception(uint8_t deviceID, uint8_t functionCode, uint8_t excep
 // CRC Calculation
 uint16_t Modbus_CRC16(uint8_t *modbusDataFrame, uint16_t modbusDataFrameLength) 
 {
-    uint16_t modbusDataFrameCrc = 0xFFFF; // Initialize CRC with 0xFFFF
-    for (int pos = 0; pos < modbusDataFrameLength; pos++) 
-    {
-        modbusDataFrameCrc ^= (uint16_t)modbusDataFrame[pos];  // XOR the data with the CRC
-        for (int bitNumber = 8; bitNumber != 0; bitNumber--) 
-        {
-            if ((modbusDataFrameCrc & 0x0001) != 0) 
-            {
-                modbusDataFrameCrc >>= 1;
-                modbusDataFrameCrc ^= 0xA001;  // XOR with Modbus polynomial
-            }
-            else
-            {
-                modbusDataFrameCrc >>= 1;
-            }
-        }
-    }
-    return modbusDataFrameCrc;
+	uint16_t modbusDataFrameCrc = 0xFFFF; // Initialize CRC with 0xFFFF
+	for (int pos = 0; pos < modbusDataFrameLength; pos++) 
+	{
+		modbusDataFrameCrc ^= (uint16_t)modbusDataFrame[pos];  // XOR the data with the CRC
+		for (int bitNumber = 8; bitNumber != 0; bitNumber--) 
+		{
+			if ((modbusDataFrameCrc & 0x0001) != 0) 
+			{
+				modbusDataFrameCrc >>= 1;
+				modbusDataFrameCrc ^= 0xA001;  // XOR with Modbus polynomial
+			}
+			else
+			{
+				modbusDataFrameCrc >>= 1;
+			}
+		}
+	}
+	return modbusDataFrameCrc;
 }
 
 // Function to append CRC to the message
@@ -205,29 +235,28 @@ first holding register, and the low 16 bits are stored in the next.
 ******************************************************************************************************/
 int Load_float_to_Holding_Register(unsigned int firstHoldingRegisterAddress, float userData) 
 {
-   // Ensure the address is within valid range (we need two registers)
-   if (firstHoldingRegisterAddress >= maxNumberOfHoldingRegisters - 1) 
-    {
-        return ILLEGAL_DATA_ADDRESS;  // Error: Out of range
-    }
-
-    // Union to treat the float as 4 bytes
-    union 
+	union                        // Union to treat the float as 4 bytes
 	{
-        float floatValue;
-        uint32_t intValue;  // 32-bit integer representation of the float
-    } dataConverter;
-
-    // Load the float into the union
-    dataConverter.floatValue = userData;
-
-    // Split the 32-bit float into two 16-bit integers
-    uint16_t highBits = (dataConverter.intValue >> 16) & 0xFFFF;  // Upper 16 bits
-    uint16_t lowBits = dataConverter.intValue & 0xFFFF;           // Lower 16 bits
-
-    // Store the high and low parts in two consecutive holding registers
-    holdingRegisters[firstHoldingRegisterAddress] = highBits;      // First register
-    holdingRegisters[firstHoldingRegisterAddress + 1] = lowBits;   // Next register
-
-    return SUCCESSFUL;  // Success
+		float floatValue;
+		uint32_t intValue;        // 32-bit integer representation of the float
+	} dataConverter;
+	
+	// Load the float into the union
+	dataConverter.floatValue = userData;	
+	
+	// Split the 32-bit float into two 16-bit integers
+	uint16_t highBits = (dataConverter.intValue >> 16) & 0xFFFF;  // Upper 16 bits
+	uint16_t lowBits = dataConverter.intValue & 0xFFFF;           // Lower 16 bits	
+   // Ensure the address is within valid range (we need two registers)
+	if (firstHoldingRegisterAddress < maxNumberOfHoldingRegisters - 1) 
+	{
+		// Store the high and low parts in two consecutive holding registers
+		holdingRegister[firstHoldingRegisterAddress] = highBits;      // First register
+		holdingRegister[firstHoldingRegisterAddress + 1] = lowBits;   // Next register		
+	}
+	else
+	{
+		return ILLEGAL_DATA_ADDRESS;  // Error: Out of range
+	}
+	return SUCCESSFUL;  // Success
 }
