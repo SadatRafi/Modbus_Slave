@@ -8,8 +8,10 @@ Description: This repository implements the MODBUS RTU protocol for a slave devi
 	integrity using a Cyclic Redundancy Check (CRC) for error detection.
 ****************************************************************************************/
 #include "Modbus_RTU_Slave.h"
+#include <assert.h>
 
-#define MAXIMUM_APPLICATION_DATA_SIZE 252
+#define MAXIMUM_MESSAGE_FRAME_SIZE 256
+#define MAXIMUM_DATA_FRAME_SIZE 252
 
 #define FC_READ_COILS                      0x01  // Read Coils
 #define FC_READ_DISCRETE_INPUTS            0x02  // Read Discrete Inputs
@@ -28,9 +30,10 @@ Description: This repository implements the MODBUS RTU protocol for a slave devi
 
 // Arrays for Modbus data
 static uint8_t slaveAddress;
-typedef union {
-    uint8_t byteMemory[DEVICE_APPLICATION_MEMORY];
-    uint16_t wordMemory[DEVICE_APPLICATION_MEMORY / 2];  // Assuming 2 bytes per 16-bit word
+typedef union 
+{
+	uint8_t byteMemory[DEVICE_APPLICATION_MEMORY];
+	uint16_t wordMemory[DEVICE_APPLICATION_MEMORY / 2];  // Assuming 2 bytes per 16-bit word
 } DeviceApplicationMemory;
 
 static DeviceApplicationMemory deviceMemory;
@@ -147,7 +150,7 @@ int Modbus_Slave_ProcessMessage(uint8_t *receivedMessage, uint16_t length, uint8
 // Function to handle Modbus function code 0x03 (Read Holding Registers)
 void Modbus_Read_Holding_Registers(uint8_t deviceID, uint16_t startAddress, uint8_t quantity, uint8_t *responseMessage)
 {
-	if((quantity*2) > MAXIMUM_APPLICATION_DATA_SIZE)
+	if((quantity*2) > MAXIMUM_DATA_FRAME_SIZE)
 	{
 		// Send illegal data value exception
 		Send_Modbus_Exception(deviceID, FC_READ_HOLDING_REGISTERS, ILLEGAL_DATA_VALUE, responseMessage);
@@ -158,10 +161,15 @@ void Modbus_Read_Holding_Registers(uint8_t deviceID, uint16_t startAddress, uint
 	if ((startAddress + quantity) > maxNumberOfHoldingRegisters) 
 	{
 		// Send illegal data address exception
-		Send_Modbus_Exception(deviceID, 0x03, ILLEGAL_DATA_ADDRESS, responseMessage);
+		Send_Modbus_Exception(deviceID, FC_READ_HOLDING_REGISTERS, ILLEGAL_DATA_ADDRESS, responseMessage);
 		return;
 	}
-
+	
+	//Clearing current contents of response message
+  for(int arrayIndex = 0;arrayIndex < MAXIMUM_MESSAGE_FRAME_SIZE; arrayIndex++)
+	{
+		responseMessage[arrayIndex] = 0;
+	}
 	// Prepare the response
 	responseMessage[0] = deviceID;          										 // Slave ID
 	responseMessage[1] = FC_READ_HOLDING_REGISTERS;              // Function code 0x03
