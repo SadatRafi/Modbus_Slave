@@ -1,0 +1,10 @@
+--cpu=Cortex-M4.fp.sp
+".\objects\main.o"
+".\objects\modbus_rtu_slave.o"
+".\objects\uart1_driver.o"
+".\objects\startup_stm32f446xx.o"
+".\objects\system_stm32f4xx.o"
+--strict --scatter ".\Objects\Modbus_RTU_Slave_Test.sct"
+--summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
+--info sizes --info totals --info unused --info veneers
+--list ".\Listings\Modbus_RTU_Slave_Test.map" -o .\Objects\Modbus_RTU_Slave_Test.axf
