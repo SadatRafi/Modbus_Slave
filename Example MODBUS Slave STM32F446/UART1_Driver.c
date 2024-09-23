@@ -63,11 +63,33 @@ character.So specifying a end indicating character or zro as end of frame is not
 				txBufferUart1.enqueueIndex = 0;
 			}
 		}
-		else
-		{
-			`return ERROR_UART1_TRANSMISSION_ONGOING;
-		}
-		USART1->
+		else return ERROR_UART1_TRANSMISSION_ONGOING;
+		
+		//Enable USART Transmit Register Empty Interrupt
+		USART1->CR1 |= USART_CR1_TXEIE;
 	}
-	
+	return SUCCESS;
 }
+
+void USART1_IRQHandler(void)
+{
+	if (USART1->SR & USART_SR_TXE)  // Check if TXE flag is set
+	{
+		if(txBufferUart1.enqueueIndex != txBufferUart1.dequeueIndex)
+		{
+			USART1->DR = txBufferUart1.data[txBufferUart1.dequeueIndex];
+			txBufferUart1.dequeueIndex++;
+			if(txBufferUart1.dequeueIndex >= (uint8_t)MXIMUM_TX_BUFFER_SIZE)
+			{
+				txBufferUart1.dequeueIndex = 0;
+			}
+			USART1->CR1 |= USART_CR1_TXEIE;
+		}
+		else 
+		{
+			//Disable UART Transmit Register Empty Interrupt if Enqueue and dequeue 
+			USART1->CR1 &=~ USART_CR1_TXEIE;
+		}
+	}
+}
+
