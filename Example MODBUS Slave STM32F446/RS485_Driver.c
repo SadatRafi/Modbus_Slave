@@ -1,4 +1,4 @@
-#include "UART1_Driver.h"
+#include "RS485_Driver.h"
 #include "stm32f4xx.h"                  // Device header
 
 /***************************************************************************************
@@ -27,13 +27,48 @@ User instructions:
 Author: Sadat Rafi
 Function: initialize_UART1
 Description: 
+	This function initializes UART1 on the STM32F446RE microcontroller with the specified
+	baud rate. It enables the necessary clocks for USART1 and GPIOA, configures the TX (PA9)
+	and RX (PA10) pins for alternate function, sets the baud rate based on the system clock,
+	enables the transmitter, receiver, and RX interrupt, and finally configures the NVIC to
+	handle USART1 interrupts.
 ****************************************************************************************/
-void initialize_UART1(int baudRate)
+void initialize_RS485(int baudRate)
 {
-	//Enable Clock
-	//Enable TX
-	//Enable RX
-	//Enable
+	// 1. Enable the clock for USART1 and GPIOA (USART1 TX is PA9, RX is PA10)
+	RCC->APB2ENR |= RCC_APB2ENR_USART1EN;    // Enable USART1 clock
+	RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;     // Enable GPIOA clock
+
+	// 2. Configure PA9 (TX) and PA10 (RX) for alternate function (AF7)
+	GPIOA->MODER &= ~(GPIO_MODER_MODE9 | GPIO_MODER_MODE10);  // Clear PA9 and PA10 mode bits
+	GPIOA->MODER |= (GPIO_MODER_MODE9_1 | GPIO_MODER_MODE10_1);  // Set alternate function mode for PA9 and PA10
+
+	GPIOA->AFR[1] |= 0x00000770;  // Set AF7 for PA9 (TX) and PA10 (RX)
+
+	// 3. Configure USART1
+	USART1->CR1 = 0;   // Clear all settings
+	USART1->CR1 |= USART_CR1_TE | USART_CR1_RE;   // Enable transmitter and receiver
+
+	// 4. Configure baud rate (APB2 Clock is 90MHz for STM32F446RE)
+	SystemCoreClockUpdate();
+	USART1->BRR = (SystemCoreClock / 2) / baudRate;   // APB2 runs at half the system clock, calculate baud rate
+
+	// 5. Enable RX interrupt (Receive Data Register Not Empty)
+	USART1->CR1 |= USART_CR1_RXNEIE;   // Enable RXNE interrupt
+
+	// 6. Enable USART1
+	USART1->CR1 |= USART_CR1_UE;   // Enable USART
+
+	// 7. Configure NVIC for USART1 IRQ
+	NVIC_EnableIRQ(USART1_IRQn);   // Enable USART1 interrupt in NVIC
+	
+	// 8. Configure PA8 pin as output for MAX485 DE/RE control
+	GPIOA->MODER &= ~(GPIO_MODER_MODE8);  // Clear PA8 mode bits
+	GPIOA->MODER |= (GPIO_MODER_MODE8_0);  // Set PA8 as output
+	GPIOA->OSPEEDR |= (3U << (2 * 8));  // Set high speed for PA8
+
+	// 9. Initialize PA8 to receiver mode (pull DE/RE pin low to receive)
+	GPIOA->ODR &=~ GPIO_ODR_OD8;  // Reset PA8 (receiver mode)
 }
 
 typedef struct
@@ -65,6 +100,7 @@ character.So specifying a end indicating character or zro as end of frame is not
 		}
 		else return ERROR_UART1_TRANSMISSION_ONGOING;
 		
+		GPIOA->ODR |= GPIO_ODR_OD8;  // Set PA8 (Transmitter mode)
 		//Enable USART Transmit Register Empty Interrupt
 		USART1->CR1 |= USART_CR1_TXEIE;
 	}
