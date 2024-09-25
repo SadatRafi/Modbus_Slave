@@ -81,8 +81,24 @@ typedef struct
 
 static TxBuffer txBufferUart1;
 
+/***************************************************************************************
+Author: Sadat Rafi
+Date: 25 September 2024
+Function: Transfer_Message
+Description: 
+	This function first enqueues the payload in a citcular buffer if the enqueue and dequeue
+index are same (i.e. the circular buffer is currently empty). If the enqueue and dequeue
+index are not same, it indicates that a UART transmission is in progress. After enqueueing,
+PA8 is set which turns MAX485 into bus controller mode. Then it enables UART1 transmit 
+register empty interrupt.
+****************************************************************************************/
 int Transfer_Message(uint8_t *payload, uint16_t length)
 {
+if(length > (uint16_t)MXIMUM_TX_BUFFER_SIZE)
+{
+	return ERROR_INCREASE_CIRCULAR_BUFFER_SIZE;
+}
+	
 /***************************************************************************************
 NOTE: In modbus zero may come in srting as a part of data. Modbus RTU string is not ASCII
 character.So specifying a end indicating character or zro as end of frame is not practical.
@@ -98,7 +114,8 @@ character.So specifying a end indicating character or zro as end of frame is not
 				txBufferUart1.enqueueIndex = 0;
 			}
 		}
-		else return ERROR_UART1_TRANSMISSION_ONGOING;
+		else 
+			return ERROR_UART1_TRANSMISSION_ONGOING;
 		
 		GPIOA->ODR |= GPIO_ODR_OD8;  // Set PA8 (Transmitter mode)
 		//Enable USART Transmit Register Empty Interrupt
@@ -107,6 +124,16 @@ character.So specifying a end indicating character or zro as end of frame is not
 	return SUCCESS;
 }
 
+/***************************************************************************************
+Author: Sadat Rafi
+Date: 25 September 2024
+Function: USART1_IRQHandler
+Description: 
+	USART1 Interrupt Handler manages both transmission and receiption. If Transmit Register
+Empty Interrupt occurs, it dequeues 'txBufferUart1' circular buffer until the enqueue and
+dequeue index become same. As soon as tranmit circular buffer is empty, the UART1 transmit 
+register empty interrupt is disbled.
+****************************************************************************************/
 void USART1_IRQHandler(void)
 {
 	if (USART1->SR & USART_SR_TXE)  // Check if TXE flag is set
@@ -126,6 +153,10 @@ void USART1_IRQHandler(void)
 			//Disable UART Transmit Register Empty Interrupt if Enqueue and dequeue 
 			USART1->CR1 &=~ USART_CR1_TXEIE;
 		}
+	}
+	else if (USART1->SR & USART_SR_RXNE)  // Check if RXE flag is set
+	{
+		
 	}
 }
 
