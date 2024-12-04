@@ -10,7 +10,7 @@ typedef struct
 {
 	uint16_t numberOfCoils;         
 	uint16_t numberOfDiscreteInputs;
-  uint16_t numberOfInputRegisters;
+  	uint16_t numberOfInputRegisters;
 	uint16_t numberOfHoldingRegisters;
 }ModbusApplicationMemory;
 
