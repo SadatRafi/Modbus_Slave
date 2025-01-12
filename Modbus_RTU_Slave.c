@@ -173,7 +173,7 @@ void Modbus_Read_Holding_Registers(uint8_t deviceID, uint16_t startAddress, uint
 	// Prepare the response
 	responseMessage[0] = deviceID;          										 // Slave ID
 	responseMessage[1] = FC_READ_HOLDING_REGISTERS;              // Function code 0x03
-	responseMessage[2] = byteCount;         										 // Number of bytes to follow (2 × quantity)
+	responseMessage[2] = byteCount;         										 // Number of bytes to follow (2 Ã— quantity)
 
 	// Add the requested register values to the response message
 	for (uint16_t i = 0; i < quantity; i++) 
@@ -196,7 +196,38 @@ void Send_Modbus_Exception(uint8_t deviceID, uint8_t functionCode, uint8_t excep
     Append_CRC(responseMessage, 3);                // Append CRC
 }
 
-// CRC Calculation
+/**********************************************************************************************************
+Function: Modbus_CRC16
+Author: Sadat Rafi
+Description: 
+This function calculates the running CRC of the given data frame using the CRC-16-IBM (Modbus) polynomial 
+0xA001. It treats the input data frame as a binary polynomial and performs a bitwise division by the 
+polynomial to calculate a 16-bit remainder, which is the CRC value.
+
+Key Operations:
+1. **Initialization**: 
+   - The cumulative CRC is initialized to 0xFFFF, as per the Modbus protocol.  
+   - **Why 0xFFFF?**  
+     - It improves error detection, especially for leading zeros in the message.  
+     - It ensures a non-trivial initial remainder, avoiding cases where CRC becomes zero too early.  
+     - It maintains compatibility with the Modbus protocol specification.
+
+2. **Byte-by-Byte Processing**:
+   - The function processes each byte of the input data frame. Each byte is XORed with the current 
+     CRC value, representing the subtraction of the byte's binary value from the running remainder.
+
+3. **Bit-by-Bit Processing**:
+   - The function processes each bit of the XORed result:
+     a. Right shifting (`>>`) the CRC simulates dividing the remainder by `x` in polynomial terms.
+     b. Checking the least significant bit (LSB) to determine if the cumulative remainder can be 
+        divided by the polynomial.
+     c. If the LSB is `1`, the remainder is XORed with the polynomial 0xA001, simulating a 
+        polynomial subtraction.
+
+4. **Final CRC Calculation**:
+   - The function returns the cumulative CRC after processing all bytes. This CRC is used to verify 
+     data integrity during communication.
+**********************************************************************************************************/
 uint16_t Modbus_CRC16(uint8_t *modbusDataFrame, uint16_t modbusDataFrameLength) 
 {
 	uint16_t modbusDataFrameCrc = 0xFFFF; // Initialize CRC with 0xFFFF
